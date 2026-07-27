@@ -1,20 +1,15 @@
-output "server_ip" {
-  description = "Elastic public IP used by the application and CI/CD."
-  value       = aws_eip.server.public_ip
-}
-
 output "application_url" {
-  value = "http://${aws_eip.server.public_ip}"
+  value = "http://${var.vm_ip}:8080"
 }
 
 output "grafana_url" {
-  value = "http://${aws_eip.server.public_ip}:3000"
+  value = "http://${var.vm_ip}:3000"
 }
 
 output "prometheus_url" {
-  value = "http://${aws_eip.server.public_ip}:9090"
+  value = "http://${var.vm_ip}:9090"
 }
 
-output "ssh_command" {
-  value = "ssh ubuntu@${aws_eip.server.public_ip}"
+output "health_url" {
+  value = "http://${var.vm_ip}:8080/health"
 }

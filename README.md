@@ -1,108 +1,144 @@
-# DevOps Graduate Project — infrastruktura
+# DevOps Graduate Project — infrastruktura lokalna
 
-Drugie repozytorium projektu zawierające kompletną infrastrukturę jako kod.
-Terraform tworzy od zera sieć AWS, firewall, klucz, serwer Ubuntu oraz Elastic
-IP. Cloud-init instaluje Dockera, konfiguruje UFW i uruchamia monitoring.
+Drugie repozytorium projektu zawiera kompletną infrastrukturę jako kod bez AWS.
+Vagrant tworzy maszynę Ubuntu 24.04 w VirtualBox, skrypt bootstrap instaluje
+narzędzia, a Terraform zarządza wszystkimi kontenerami Docker.
+
+## Architektura
+
+```mermaid
+flowchart TB
+    Host["Komputer Windows"] --> VB["VirtualBox"]
+    VB --> VM["Ubuntu 24.04 — 192.168.56.10"]
+    VM --> Runner["GitHub Actions Runner"]
+    Runner --> TF["Terraform"]
+    TF --> Docker["Docker"]
+    Docker --> App["Aplikacja :8080"]
+    Docker --> Prom["Prometheus :9090"]
+    Docker --> Grafana["Grafana :3000"]
+    Docker --> Loki["Loki + Promtail"]
+    Docker --> Exporters["node-exporter + cAdvisor"]
+```
 
 ## Tworzone zasoby
 
-- VPC `10.42.0.0/16`,
-- publiczna podsieć i routing przez Internet Gateway,
-- Security Group,
-- EC2 z Ubuntu 24.04 LTS,
-- szyfrowany wolumen GP3,
-- Elastic IP,
-- klucz SSH,
-- Docker Compose z Prometheus, Grafana, Loki, Promtail, node-exporter i cAdvisor.
+- VM Ubuntu 24.04: 2 CPU, 4 GB RAM,
+- prywatna sieć host-only `192.168.56.0/24`,
+- Docker i Docker Compose,
+- Terraform i GitHub Actions Runner,
+- aplikacja Java,
+- Prometheus, Grafana, Loki i Promtail,
+- node-exporter i cAdvisor,
+- trwałe wolumeny danych oraz sieć kontenerowa,
+- automatycznie provisionowany dashboard Grafany.
 
 ## Wymagania
 
-- konto AWS z uprawnieniami do EC2/VPC,
-- AWS CLI z ustawionymi danymi dostępowymi lub zmienne `AWS_*`,
-- Terraform co najmniej 1.7,
-- para kluczy SSH.
+- VirtualBox 7,
+- Vagrant,
+- Git,
+- konto GitHub.
 
-Uwaga: zasoby AWS mogą generować opłaty. Po ćwiczeniach użyj
-`terraform destroy`.
+Nie jest potrzebne konto AWS, karta płatnicza ani AWS SSO. Wszystkie zasoby
+działają na komputerze lokalnym.
 
-## Wdrożenie od zera
+## Uruchomienie od zera
 
-1. Utwórz klucz, jeśli jeszcze go nie masz:
-
-   ```bash
-   ssh-keygen -t ed25519 -f ~/.ssh/devops-graduate
-   ```
-
-2. Skopiuj plik konfiguracyjny:
-
-   ```bash
-   cp terraform.tfvars.example terraform.tfvars
-   ```
-
-3. W `terraform.tfvars` ustaw:
-
-   - własny publiczny adres IP jako `admin_cidr`,
-   - zawartość pliku `.pub` jako `ssh_public_key`,
-   - login GitHub w `application_image`,
-   - silne hasło Grafany.
-
-4. Utwórz infrastrukturę:
-
-   ```bash
-   terraform init
-   terraform fmt -check
-   terraform validate
-   terraform plan
-   terraform apply
-   ```
-
-5. Poczekaj kilka minut na zakończenie cloud-init:
-
-   ```bash
-   ssh -i ~/.ssh/devops-graduate ubuntu@$(terraform output -raw server_ip)
-   cloud-init status --wait
-   sudo docker compose -f /opt/devops/compose.yaml ps
-   ```
-
-Polecenia są idempotentne: ponowne `terraform apply` doprowadza zasoby do stanu
-opisanego w kodzie, zamiast tworzyć ich duplikaty.
-
-## Dostęp
+W katalogu repozytorium infrastruktury wykonaj:
 
 ```bash
-terraform output application_url
-terraform output grafana_url
-terraform output prometheus_url
+vagrant up
+vagrant ssh
 ```
 
-Domyślne konto Grafany to `admin`; hasło pochodzi z
-`grafana_admin_password`. Dashboard `DevOps Project Overview` jest
-provisionowany automatycznie.
+Pierwsze uruchomienie pobiera obraz Ubuntu i instaluje wymagane pakiety, więc
+trwa dłużej. Kolejne uruchomienia wykorzystują gotową VM.
 
-## Reguły firewalla
-
-| Port | Usługa | Źródło |
-|---:|---|---|
-| 22 | SSH | tylko `admin_cidr` |
-| 80 | aplikacja | Internet |
-| 3000 | Grafana | tylko `admin_cidr` |
-| 9090 | Prometheus | tylko `admin_cidr` |
-
-Te same ograniczenia dla portów administracyjnych są ustawione w AWS Security
-Group i lokalnym firewallu UFW.
-
-## Usunięcie infrastruktury
+Wewnątrz maszyny sprawdź narzędzia:
 
 ```bash
-terraform plan -destroy
-terraform destroy
+docker --version
+terraform version
 ```
 
-Po usunięciu sprawdź w konsoli AWS, czy nie pozostały płatne zasoby.
+## Rejestracja GitHub Actions Runner
+
+1. Utwórz publiczne repozytorium infrastruktury o dokładnej nazwie
+   `devops-graduate-infrastructure`.
+2. W repozytorium aplikacji przejdź do:
+   `Settings → Actions → Runners → New self-hosted runner`.
+3. Wybierz Linux i x64, a następnie skopiuj jednorazowy token rejestracyjny.
+4. W zalogowanej VM uruchom:
+
+   ```bash
+   cd /vagrant
+   ./scripts/register-runner.sh \
+     https://github.com/TWOJ_LOGIN/devops-graduate-app \
+     JEDNORAZOWY_TOKEN
+   ```
+
+Token rejestracyjny jest ważny krótko i podaje się go bezpośrednio w VM. Nie
+zapisuj go w pliku ani nie wklejaj do dokumentacji.
+
+Po rejestracji runner `devops-local-vm` powinien mieć status `Idle` oraz etykietę
+`devops-local`.
+
+## Sprawdzenie Terraform
+
+Po utworzeniu VM można sprawdzić składnię infrastruktury bez wdrażania obrazu:
+
+```bash
+cd /vagrant
+terraform init
+terraform fmt -check
+terraform validate
+```
+
+Pierwsze właściwe wdrożenie wykona pipeline po pushu do `main`. Przekaże obraz
+opublikowany w GHCR oraz zapisze stan w
+`/opt/devops-terraform/terraform.tfstate`. Ponowne `terraform apply` doprowadza
+zasoby do opisanego stanu zamiast tworzyć duplikaty.
+
+## Dostęp z Windows
+
+| Usługa | Adres |
+|---|---|
+| aplikacja | `http://192.168.56.10:8080` |
+| health check | `http://192.168.56.10:8080/health` |
+| Grafana | `http://192.168.56.10:3000` |
+| Prometheus | `http://192.168.56.10:9090` |
+
+Domyślne konto Grafany to `admin`; hasło pochodzi ze zmiennej
+`grafana_admin_password`. Dashboard `DevOps Project Overview` jest tworzony
+automatycznie.
+
+## Zarządzanie maszyną
+
+```bash
+vagrant status       # stan VM
+vagrant suspend      # wstrzymanie
+vagrant halt         # wyłączenie
+vagrant up           # ponowne uruchomienie
+vagrant provision    # ponowienie konfiguracji bootstrap
+```
+
+Całkowite usunięcie VM:
+
+```bash
+vagrant destroy
+```
+
+To usuwa maszynę i jej lokalne dane. Kod repozytorium pozostaje bez zmian.
 
 ## Stan Terraform
 
-W wersji zaliczeniowej stan jest lokalny i ignorowany przez Git. W pracy
-zespołowej należałoby dodać backend S3 z blokadą stanu. Plik
-`.terraform.lock.hcl` jest wersjonowany, aby każdy używał tej samej wersji
-providera AWS.
+Stan wdrożenia jest przechowywany wyłącznie wewnątrz VM i ignorowany przez Git.
+Plik `.terraform.lock.hcl` jest wersjonowany, aby każdy używał tej samej wersji
+providera Docker.
+
+## Ograniczenia bezpieczeństwa
+
+Self-hosted runner wykonuje polecenia workflow na lokalnej maszynie. Nie należy
+uruchamiać go dla niezaufanych pull requestów ani dawać nieznanym osobom prawa
+pushowania. Nasz workflow kieruje na runner tylko job `deploy` po pushu do
+`main`; buildy pozostałych gałęzi działają na runnerach GitHuba.

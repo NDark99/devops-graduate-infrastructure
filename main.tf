@@ -1,153 +1,287 @@
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099720109477"]
+locals {
+  monitoring_dir = abspath("${path.module}/monitoring")
+}
 
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
+resource "docker_network" "monitoring" {
+  name = "devops-monitoring"
+}
+
+resource "docker_volume" "prometheus" {
+  name = "devops-prometheus-data"
+}
+
+resource "docker_volume" "grafana" {
+  name = "devops-grafana-data"
+}
+
+resource "docker_volume" "loki" {
+  name = "devops-loki-data"
+}
+
+resource "docker_volume" "promtail" {
+  name = "devops-promtail-data"
+}
+
+resource "docker_image" "application" {
+  name         = var.application_image
+  keep_locally = true
+  pull_triggers = [
+    var.image_digest
+  ]
+}
+
+resource "docker_image" "prometheus" {
+  name         = "prom/prometheus:v3.5.0"
+  keep_locally = true
+}
+
+resource "docker_image" "grafana" {
+  name         = "grafana/grafana:12.1.0"
+  keep_locally = true
+}
+
+resource "docker_image" "loki" {
+  name         = "grafana/loki:3.5.3"
+  keep_locally = true
+}
+
+resource "docker_image" "promtail" {
+  name         = "grafana/promtail:3.5.3"
+  keep_locally = true
+}
+
+resource "docker_image" "node_exporter" {
+  name         = "prom/node-exporter:v1.9.1"
+  keep_locally = true
+}
+
+resource "docker_image" "cadvisor" {
+  name         = "gcr.io/cadvisor/cadvisor:v0.52.1"
+  keep_locally = true
+}
+
+resource "docker_container" "application" {
+  name    = "devops-app"
+  image   = docker_image.application.image_id
+  restart = "unless-stopped"
+
+  env = [
+    "APP_VERSION=${var.application_version}"
+  ]
+
+  ports {
+    internal = 8080
+    external = 8080
+    ip       = "0.0.0.0"
   }
 
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
+  networks_advanced {
+    name    = docker_network.monitoring.name
+    aliases = ["app"]
   }
 
-  filter {
-    name   = "architecture"
-    values = ["x86_64"]
+  healthcheck {
+    test         = ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+    interval     = "15s"
+    timeout      = "3s"
+    retries      = 5
+    start_period = "10s"
   }
 }
 
-resource "aws_vpc" "main" {
-  cidr_block           = "10.42.0.0/16"
-  enable_dns_support   = true
-  enable_dns_hostnames = true
+resource "docker_container" "prometheus" {
+  name    = "prometheus"
+  image   = docker_image.prometheus.image_id
+  restart = "unless-stopped"
 
-  tags = { Name = "${var.project_name}-vpc" }
-}
+  command = [
+    "--config.file=/etc/prometheus/prometheus.yml",
+    "--storage.tsdb.path=/prometheus",
+    "--storage.tsdb.retention.time=15d"
+  ]
 
-resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
-  tags   = { Name = "${var.project_name}-igw" }
-}
-
-resource "aws_subnet" "public" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.42.1.0/24"
-  map_public_ip_on_launch = true
-
-  tags = { Name = "${var.project_name}-public" }
-}
-
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
+  ports {
+    internal = 9090
+    external = 9090
+    ip       = "0.0.0.0"
   }
 
-  tags = { Name = "${var.project_name}-public" }
+  mounts {
+    target    = "/etc/prometheus/prometheus.yml"
+    source    = "${local.monitoring_dir}/prometheus/prometheus.yml"
+    type      = "bind"
+    read_only = true
+  }
+
+  mounts {
+    target = "/prometheus"
+    source = docker_volume.prometheus.name
+    type   = "volume"
+  }
+
+  networks_advanced {
+    name = docker_network.monitoring.name
+  }
 }
 
-resource "aws_route_table_association" "public" {
-  subnet_id      = aws_subnet.public.id
-  route_table_id = aws_route_table.public.id
+resource "docker_container" "loki" {
+  name    = "loki"
+  image   = docker_image.loki.image_id
+  restart = "unless-stopped"
+  command = ["-config.file=/etc/loki/local-config.yaml"]
+
+  mounts {
+    target    = "/etc/loki/local-config.yaml"
+    source    = "${local.monitoring_dir}/loki/loki.yml"
+    type      = "bind"
+    read_only = true
+  }
+
+  mounts {
+    target = "/loki"
+    source = docker_volume.loki.name
+    type   = "volume"
+  }
+
+  networks_advanced {
+    name = docker_network.monitoring.name
+  }
 }
 
-resource "aws_security_group" "server" {
-  name        = "${var.project_name}-server"
-  description = "Application, administration and monitoring access"
-  vpc_id      = aws_vpc.main.id
+resource "docker_container" "grafana" {
+  name    = "grafana"
+  image   = docker_image.grafana.image_id
+  restart = "unless-stopped"
 
-  ingress {
-    description = "Application HTTP"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+  env = [
+    "GF_SECURITY_ADMIN_USER=admin",
+    "GF_SECURITY_ADMIN_PASSWORD=${var.grafana_admin_password}",
+    "GF_USERS_ALLOW_SIGN_UP=false"
+  ]
+
+  ports {
+    internal = 3000
+    external = 3000
+    ip       = "0.0.0.0"
   }
 
-  ingress {
-    description = "SSH from administrator"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.admin_cidr]
+  mounts {
+    target = "/var/lib/grafana"
+    source = docker_volume.grafana.name
+    type   = "volume"
   }
 
-  ingress {
-    description = "Grafana from administrator"
-    from_port   = 3000
-    to_port     = 3000
-    protocol    = "tcp"
-    cidr_blocks = [var.admin_cidr]
+  mounts {
+    target    = "/etc/grafana/provisioning"
+    source    = "${local.monitoring_dir}/grafana/provisioning"
+    type      = "bind"
+    read_only = true
   }
 
-  ingress {
-    description = "Prometheus from administrator"
-    from_port   = 9090
-    to_port     = 9090
-    protocol    = "tcp"
-    cidr_blocks = [var.admin_cidr]
+  mounts {
+    target    = "/var/lib/grafana/dashboards"
+    source    = "${local.monitoring_dir}/grafana/dashboards"
+    type      = "bind"
+    read_only = true
   }
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  networks_advanced {
+    name = docker_network.monitoring.name
   }
 
-  tags = { Name = "${var.project_name}-server" }
+  depends_on = [
+    docker_container.prometheus,
+    docker_container.loki
+  ]
 }
 
-resource "aws_key_pair" "deployer" {
-  key_name   = "${var.project_name}-key"
-  public_key = var.ssh_public_key
-}
+resource "docker_container" "node_exporter" {
+  name       = "node-exporter"
+  image      = docker_image.node_exporter.image_id
+  restart    = "unless-stopped"
+  command    = ["--path.rootfs=/host"]
+  privileged = true
 
-resource "aws_instance" "server" {
-  ami                         = data.aws_ami.ubuntu.id
-  instance_type               = var.instance_type
-  subnet_id                   = aws_subnet.public.id
-  vpc_security_group_ids      = [aws_security_group.server.id]
-  key_name                    = aws_key_pair.deployer.key_name
-  associate_public_ip_address = true
-  user_data_replace_on_change = true
-
-  user_data = templatefile("${path.module}/cloud-init.yaml.tftpl", {
-    admin_cidr             = var.admin_cidr
-    application_image      = var.application_image
-    grafana_admin_password = var.grafana_admin_password
-    compose_b64            = base64encode(file("${path.module}/monitoring/compose.yaml"))
-    prometheus_b64         = base64encode(file("${path.module}/monitoring/prometheus/prometheus.yml"))
-    loki_b64               = base64encode(file("${path.module}/monitoring/loki/loki.yml"))
-    promtail_b64           = base64encode(file("${path.module}/monitoring/promtail/promtail.yml"))
-    datasource_b64         = base64encode(file("${path.module}/monitoring/grafana/provisioning/datasources/datasources.yml"))
-    dashboard_provider_b64 = base64encode(file("${path.module}/monitoring/grafana/provisioning/dashboards/provider.yml"))
-    dashboard_b64          = base64encode(file("${path.module}/monitoring/grafana/dashboards/devops-overview.json"))
-  })
-
-  root_block_device {
-    volume_type           = "gp3"
-    volume_size           = 20
-    encrypted             = true
-    delete_on_termination = true
+  mounts {
+    target    = "/host"
+    source    = "/"
+    type      = "bind"
+    read_only = true
   }
 
-  metadata_options {
-    http_endpoint = "enabled"
-    http_tokens   = "required"
+  networks_advanced {
+    name = docker_network.monitoring.name
   }
-
-  tags = { Name = "${var.project_name}-server" }
-
-  depends_on = [aws_internet_gateway.main]
 }
 
-resource "aws_eip" "server" {
-  domain   = "vpc"
-  instance = aws_instance.server.id
-  tags     = { Name = "${var.project_name}-eip" }
+resource "docker_container" "cadvisor" {
+  name       = "cadvisor"
+  image      = docker_image.cadvisor.image_id
+  restart    = "unless-stopped"
+  privileged = true
+
+  mounts {
+    target    = "/rootfs"
+    source    = "/"
+    type      = "bind"
+    read_only = true
+  }
+
+  mounts {
+    target    = "/var/run"
+    source    = "/var/run"
+    type      = "bind"
+    read_only = true
+  }
+
+  mounts {
+    target    = "/sys"
+    source    = "/sys"
+    type      = "bind"
+    read_only = true
+  }
+
+  mounts {
+    target    = "/var/lib/docker"
+    source    = "/var/lib/docker"
+    type      = "bind"
+    read_only = true
+  }
+
+  networks_advanced {
+    name = docker_network.monitoring.name
+  }
+}
+
+resource "docker_container" "promtail" {
+  name    = "promtail"
+  image   = docker_image.promtail.image_id
+  restart = "unless-stopped"
+  command = ["-config.file=/etc/promtail/config.yml"]
+
+  mounts {
+    target    = "/etc/promtail/config.yml"
+    source    = "${local.monitoring_dir}/promtail/promtail.yml"
+    type      = "bind"
+    read_only = true
+  }
+
+  mounts {
+    target    = "/var/run/docker.sock"
+    source    = "/var/run/docker.sock"
+    type      = "bind"
+    read_only = true
+  }
+
+  mounts {
+    target = "/var/lib/promtail"
+    source = docker_volume.promtail.name
+    type   = "volume"
+  }
+
+  networks_advanced {
+    name = docker_network.monitoring.name
+  }
+
+  depends_on = [docker_container.loki]
 }
