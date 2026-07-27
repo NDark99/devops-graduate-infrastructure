@@ -1,0 +1,5 @@
+aws_region      = "eu-central-1"
+admin_cidr      = "203.0.113.10/32"
+ssh_public_key  = "ssh-ed25519 AAAA... your-name"
+application_image = "ghcr.io/YOUR_GITHUB_LOGIN/devops-graduate-app:main"
+grafana_admin_password = "CHANGE-ME-TO-A-STRONG-PASSWORD"
