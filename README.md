@@ -1,91 +1,91 @@
-# DevOps Graduate Project — infrastruktura lokalna
+# DevOps Graduate Project — Local Infrastructure
 
-Drugie repozytorium projektu zawiera kompletną infrastrukturę jako kod bez AWS.
-Vagrant tworzy maszynę Ubuntu 24.04 w VirtualBox, skrypt bootstrap instaluje
-narzędzia, a Terraform zarządza wszystkimi kontenerami Docker.
+This repository contains the complete infrastructure as code without AWS.
+Vagrant creates an Ubuntu 24.04 virtual machine in VirtualBox, provisioning
+prepares the operating system, and Terraform manages all Docker containers.
 
-## Architektura
+## Architecture
 
 ```mermaid
 flowchart TB
-    Host["Komputer Windows"] --> VB["VirtualBox"]
+    Host["Windows host"] --> VB["VirtualBox"]
     VB --> VM["Ubuntu 24.04 — 192.168.56.10"]
     VM --> Runner["GitHub Actions Runner"]
     Runner --> TF["Terraform"]
     TF --> Docker["Docker"]
-    Docker --> App["Aplikacja :8080"]
+    Docker --> App["Application :8080"]
     Docker --> Prom["Prometheus :9090"]
     Docker --> Grafana["Grafana :3000"]
     Docker --> Loki["Loki + Promtail"]
     Docker --> Exporters["node-exporter + cAdvisor"]
 ```
 
-## Tworzone zasoby
+## Managed resources
 
-- VM Ubuntu 24.04: 2 CPU, 4 GB RAM,
-- prywatna sieć host-only `192.168.56.0/24`,
-- Docker i Docker Compose,
-- Terraform i GitHub Actions Runner,
-- aplikacja Java,
-- Prometheus, Grafana, Loki i Promtail,
-- node-exporter i cAdvisor,
-- trwałe wolumeny danych oraz sieć kontenerowa,
-- automatycznie provisionowany dashboard Grafany.
+- Ubuntu 24.04 VM with 2 CPUs and 4 GB RAM,
+- private host-only network `192.168.56.0/24`,
+- Docker and Docker Compose,
+- Terraform and a GitHub Actions Runner,
+- Java application container,
+- Prometheus, Grafana, Loki, and Promtail,
+- node-exporter and cAdvisor,
+- persistent data volumes and a dedicated Docker network,
+- automatically provisioned Grafana dashboard.
 
-## Wymagania
+## Requirements
 
 - VirtualBox 7,
 - Vagrant,
 - Git,
-- konto GitHub.
+- a GitHub account.
 
-Nie jest potrzebne konto AWS, karta płatnicza ani AWS SSO. Wszystkie zasoby
-działają na komputerze lokalnym.
+No AWS account, payment card, or AWS SSO configuration is required. All
+resources run on the local computer.
 
-## Uruchomienie od zera
+## Create the environment from scratch
 
-W katalogu repozytorium infrastruktury wykonaj:
+Run the following commands in the infrastructure repository:
 
 ```bash
 vagrant up
 vagrant ssh
 ```
 
-Pierwsze uruchomienie pobiera obraz Ubuntu i instaluje wymagane pakiety, więc
-trwa dłużej. Kolejne uruchomienia wykorzystują gotową VM.
+The first run downloads Ubuntu and installs the required packages, so it takes
+longer. Later runs reuse the existing VM.
 
-Wewnątrz maszyny sprawdź narzędzia:
+Inside the VM, verify the installed tools:
 
 ```bash
 docker --version
 terraform version
 ```
 
-## Rejestracja GitHub Actions Runner
+## Register the GitHub Actions Runner
 
-1. Utwórz publiczne repozytorium infrastruktury o dokładnej nazwie
+1. Create a public infrastructure repository named exactly
    `devops-graduate-infrastructure`.
-2. W repozytorium aplikacji przejdź do:
+2. In the application repository, open
    `Settings → Actions → Runners → New self-hosted runner`.
-3. Wybierz Linux i x64, a następnie skopiuj jednorazowy token rejestracyjny.
-4. W zalogowanej VM uruchom:
+3. Select Linux and x64, then copy the short-lived registration token.
+4. In the VM, run:
 
    ```bash
    cd /vagrant
    ./scripts/register-runner.sh \
-     https://github.com/TWOJ_LOGIN/devops-graduate-app \
-     JEDNORAZOWY_TOKEN
+     https://github.com/YOUR_USERNAME/devops-graduate-app \
+     ONE_TIME_TOKEN
    ```
 
-Token rejestracyjny jest ważny krótko i podaje się go bezpośrednio w VM. Nie
-zapisuj go w pliku ani nie wklejaj do dokumentacji.
+Enter the registration token directly in the VM. Do not store it in a file or
+commit it to the repository.
 
-Po rejestracji runner `devops-local-vm` powinien mieć status `Idle` oraz etykietę
-`devops-local`.
+After registration, the `devops-local-vm` runner should have the `Idle` status
+and the `devops-local` label.
 
-## Sprawdzenie Terraform
+## Validate Terraform
 
-Po utworzeniu VM można sprawdzić składnię infrastruktury bez wdrażania obrazu:
+After creating the VM, validate the infrastructure without deploying an image:
 
 ```bash
 cd /vagrant
@@ -94,51 +94,51 @@ terraform fmt -check
 terraform validate
 ```
 
-Pierwsze właściwe wdrożenie wykona pipeline po pushu do `main`. Przekaże obraz
-opublikowany w GHCR oraz zapisze stan w
-`/opt/devops-terraform/terraform.tfstate`. Ponowne `terraform apply` doprowadza
-zasoby do opisanego stanu zamiast tworzyć duplikaty.
+The first deployment is performed by the pipeline after a push to `main`. It
+passes the GHCR image to Terraform and stores state in
+`/opt/devops-terraform/terraform.tfstate`. Reapplying the same configuration
+reaches the same desired state instead of creating duplicate resources.
 
-## Dostęp z Windows
+## Access from Windows
 
-| Usługa | Adres |
+| Service | URL |
 |---|---|
-| aplikacja | `http://192.168.56.10:8080` |
+| application | `http://192.168.56.10:8080` |
 | health check | `http://192.168.56.10:8080/health` |
 | Grafana | `http://192.168.56.10:3000` |
 | Prometheus | `http://192.168.56.10:9090` |
 
-Domyślne konto Grafany to `admin`; hasło pochodzi ze zmiennej
-`grafana_admin_password`. Dashboard `DevOps Project Overview` jest tworzony
-automatycznie.
+The default Grafana user is `admin`; its password comes from the
+`grafana_admin_password` variable. The `DevOps Project Overview` dashboard is
+provisioned automatically.
 
-## Zarządzanie maszyną
+## Manage the VM
 
 ```bash
-vagrant status       # stan VM
-vagrant suspend      # wstrzymanie
-vagrant halt         # wyłączenie
-vagrant up           # ponowne uruchomienie
-vagrant provision    # ponowienie konfiguracji bootstrap
+vagrant status       # show VM state
+vagrant suspend      # suspend
+vagrant halt         # shut down
+vagrant up           # start again
+vagrant provision    # rerun provisioning
 ```
 
-Całkowite usunięcie VM:
+Delete the complete VM:
 
 ```bash
 vagrant destroy
 ```
 
-To usuwa maszynę i jej lokalne dane. Kod repozytorium pozostaje bez zmian.
+This removes the VM and its local data. Repository files remain unchanged.
 
-## Stan Terraform
+## Terraform state
 
-Stan wdrożenia jest przechowywany wyłącznie wewnątrz VM i ignorowany przez Git.
-Plik `.terraform.lock.hcl` jest wersjonowany, aby każdy używał tej samej wersji
-providera Docker.
+Deployment state is stored only inside the VM and ignored by Git. The
+`.terraform.lock.hcl` file is committed so every environment uses the same
+Docker provider version.
 
-## Ograniczenia bezpieczeństwa
+## Security considerations
 
-Self-hosted runner wykonuje polecenia workflow na lokalnej maszynie. Nie należy
-uruchamiać go dla niezaufanych pull requestów ani dawać nieznanym osobom prawa
-pushowania. Nasz workflow kieruje na runner tylko job `deploy` po pushu do
-`main`; buildy pozostałych gałęzi działają na runnerach GitHuba.
+A self-hosted runner executes workflow commands on a local machine. Never run
+untrusted pull requests on it or grant unknown users push access. This workflow
+sends only the `main` deployment job to the self-hosted runner; builds for other
+branches use GitHub-hosted runners.
