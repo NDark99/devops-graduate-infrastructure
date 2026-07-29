@@ -1,0 +1,80 @@
+---
+- name: Install base system packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - docker.io
+      - docker-compose-v2
+      - gnupg
+      - jq
+      - lsb-release
+      - ufw
+      - unzip
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install the HashiCorp repository signing key
+  ansible.builtin.get_url:
+    url: https://apt.releases.hashicorp.com/gpg
+    dest: /usr/share/keyrings/hashicorp-archive-keyring.asc
+    mode: "0644"
+
+- name: Configure the HashiCorp package repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.asc]
+      https://apt.releases.hashicorp.com
+      {{ ansible_distribution_release }} main
+    filename: hashicorp
+    state: present
+
+- name: Install Terraform
+  ansible.builtin.apt:
+    name: terraform
+    state: present
+    update_cache: true
+
+- name: Enable and start Docker
+  ansible.builtin.service:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Allow the Vagrant user to use Docker
+  ansible.builtin.user:
+    name: vagrant
+    groups:
+      - docker
+    append: true
+
+- name: Create the Terraform state directory
+  ansible.builtin.file:
+    path: /opt/devops-terraform
+    state: directory
+    owner: vagrant
+    group: vagrant
+    mode: "0750"
+
+- name: Deny incoming traffic by default
+  community.general.ufw:
+    direction: incoming
+    policy: deny
+
+- name: Allow outgoing traffic by default
+  community.general.ufw:
+    direction: outgoing
+    policy: allow
+
+- name: Allow project services from the host-only network
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    src: "{{ devops_host_allowed_network }}"
+    port: "{{ item }}"
+  loop: "{{ devops_host_allowed_tcp_ports }}"
+
+- name: Enable UFW
+  community.general.ufw:
+    state: enabled

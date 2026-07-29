@@ -1,8 +1,8 @@
 # DevOps Graduate Project — Local Infrastructure
 
 This repository contains the complete infrastructure as code without AWS.
-Vagrant creates an Ubuntu 24.04 virtual machine in VirtualBox, provisioning
-prepares the operating system, and Terraform manages all Docker containers.
+Vagrant creates an Ubuntu 24.04 virtual machine in VirtualBox, Ansible prepares
+the operating system, and Terraform manages all Docker containers.
 
 ## Architecture
 
@@ -10,11 +10,14 @@ prepares the operating system, and Terraform manages all Docker containers.
 flowchart TB
     Host["Windows host"] --> VB["VirtualBox"]
     VB --> VM["Ubuntu 24.04 — 192.168.56.10"]
+    VM --> Ansible["Ansible Local"]
+    Ansible --> OS["Docker + Terraform + UFW"]
     VM --> Runner["GitHub Actions Runner"]
     Runner --> TF["Terraform"]
     TF --> Docker["Docker"]
     Docker --> App["Application :8080"]
     Docker --> Prom["Prometheus :9090"]
+    Docker --> Alert["Alertmanager :9093"]
     Docker --> Grafana["Grafana :3000"]
     Docker --> Loki["Loki + Promtail"]
     Docker --> Exporters["node-exporter + cAdvisor"]
@@ -24,10 +27,11 @@ flowchart TB
 
 - Ubuntu 24.04 VM with 2 CPUs and 4 GB RAM,
 - private host-only network `192.168.56.0/24`,
+- Ansible role configuring Docker, Terraform, and UFW,
 - Docker and Docker Compose,
 - Terraform and a GitHub Actions Runner,
 - Java application container,
-- Prometheus, Grafana, Loki, and Promtail,
+- Prometheus, Alertmanager, Grafana, Loki, and Promtail,
 - node-exporter and cAdvisor,
 - persistent data volumes and a dedicated Docker network,
 - automatically provisioned Grafana dashboard.
@@ -51,14 +55,17 @@ vagrant up
 vagrant ssh
 ```
 
-The first run downloads Ubuntu and installs the required packages, so it takes
-longer. Later runs reuse the existing VM.
+The first run downloads Ubuntu, installs Ansible in the guest, and applies the
+`devops_host` role, so it takes longer. Later runs reuse the existing VM and
+Ansible changes only configuration that differs from the desired state.
 
 Inside the VM, verify the installed tools:
 
 ```bash
 docker --version
 terraform version
+ansible --version
+sudo ufw status
 ```
 
 ## Register the GitHub Actions Runner
@@ -107,10 +114,31 @@ reaches the same desired state instead of creating duplicate resources.
 | health check | `http://192.168.56.10:8080/health` |
 | Grafana | `http://192.168.56.10:3000` |
 | Prometheus | `http://192.168.56.10:9090` |
+| Alertmanager | `http://192.168.56.10:9093` |
 
 The default Grafana user is `admin`; its password comes from the
 `grafana_admin_password` variable. The `DevOps Project Overview` dashboard is
-provisioned automatically.
+provisioned automatically. Alertmanager provides its own interface on port
+`9093`, while Grafana visualizes the Prometheus metrics used by alert rules.
+
+## Ansible provisioning
+
+Vagrant runs `ansible/playbook.yml` with the `ansible_local` provisioner. The
+reusable `devops_host` role:
+
+- installs Docker, Terraform, and supporting packages,
+- enables Docker and grants the `vagrant` user access,
+- creates the protected Terraform state directory,
+- configures UFW default policies,
+- exposes project ports only to the host-only network.
+
+Run the playbook again with:
+
+```bash
+vagrant provision
+```
+
+Ansible reports each task as `ok` or `changed`, making idempotency visible.
 
 ## Manage the VM
 

@@ -5,7 +5,7 @@ services:
     environment:
       APP_VERSION: production
     ports:
-      - "80:8080"
+      - "8080:8080"
     restart: unless-stopped
     networks: [monitoring]
     healthcheck:
@@ -23,9 +23,26 @@ services:
       - --storage.tsdb.retention.time=15d
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     ports:
       - "9090:9090"
+    restart: unless-stopped
+    networks: [monitoring]
+    depends_on: [alertmanager]
+
+  alertmanager:
+    image: prom/alertmanager:v0.32.1
+    container_name: alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --enable-feature=utf8-strict-mode
+    volumes:
+      - ./alertmanager/alertmanager.local.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    ports:
+      - "9093:9093"
     restart: unless-stopped
     networks: [monitoring]
 
@@ -100,6 +117,7 @@ networks:
 
 volumes:
   prometheus-data:
+  alertmanager-data:
   grafana-data:
   loki-data:
   promtail-data:

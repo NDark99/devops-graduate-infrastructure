@@ -10,5 +10,12 @@ Vagrant.configure("2") do |config|
     vb.cpus = 2
   end
 
-  config.vm.provision "shell", path: "scripts/bootstrap.sh"
+  config.vm.provision "ansible_local" do |ansible|
+    ansible.playbook = "ansible/playbook.yml"
+    ansible.install = true
+    ansible.install_mode = :default
+    ansible.become = true
+    ansible.galaxy_role_file = "ansible/requirements.yml"
+    ansible.galaxy_command = "ansible-galaxy collection install --requirements-file=%{role_file} --force"
+  end
 end

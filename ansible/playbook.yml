@@ -1,0 +1,7 @@
+---
+- name: Configure the DevOps project host
+  hosts: all
+  become: true
+
+  roles:
+    - devops_host

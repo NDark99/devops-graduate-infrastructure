@@ -1,5 +1,12 @@
 locals {
   monitoring_dir = abspath("${path.module}/monitoring")
+  alertmanager_config = templatefile(
+    "${path.module}/monitoring/alertmanager/alertmanager.yml.tftpl",
+    {
+      discord_webhook_url = var.discord_webhook_url
+      receiver_name       = var.discord_webhook_url == "" ? "local" : "discord"
+    }
+  )
 }
 
 resource "docker_network" "monitoring" {
@@ -20,6 +27,10 @@ resource "docker_volume" "loki" {
 
 resource "docker_volume" "promtail" {
   name = "devops-promtail-data"
+}
+
+resource "docker_volume" "alertmanager" {
+  name = "devops-alertmanager-data"
 }
 
 resource "docker_image" "application" {
@@ -57,6 +68,11 @@ resource "docker_image" "node_exporter" {
 
 resource "docker_image" "cadvisor" {
   name         = "gcr.io/cadvisor/cadvisor:v0.52.1"
+  keep_locally = true
+}
+
+resource "docker_image" "alertmanager" {
+  name         = "prom/alertmanager:v0.32.1"
   keep_locally = true
 }
 
@@ -114,9 +130,52 @@ resource "docker_container" "prometheus" {
   }
 
   mounts {
+    target    = "/etc/prometheus/alerts.yml"
+    source    = "${local.monitoring_dir}/prometheus/alerts.yml"
+    type      = "bind"
+    read_only = true
+  }
+
+  mounts {
     target = "/prometheus"
     source = docker_volume.prometheus.name
     type   = "volume"
+  }
+
+  networks_advanced {
+    name = docker_network.monitoring.name
+  }
+
+  depends_on = [docker_container.alertmanager]
+}
+
+resource "docker_container" "alertmanager" {
+  name    = "alertmanager"
+  image   = docker_image.alertmanager.image_id
+  restart = "unless-stopped"
+
+  command = [
+    "--config.file=/etc/alertmanager/alertmanager.yml",
+    "--storage.path=/alertmanager",
+    "--enable-feature=utf8-strict-mode"
+  ]
+
+  upload {
+    file        = "/etc/alertmanager/alertmanager.yml"
+    content     = local.alertmanager_config
+    permissions = "0644"
+  }
+
+  mounts {
+    target = "/alertmanager"
+    source = docker_volume.alertmanager.name
+    type   = "volume"
+  }
+
+  ports {
+    internal = 9093
+    external = 9093
+    ip       = "0.0.0.0"
   }
 
   networks_advanced {

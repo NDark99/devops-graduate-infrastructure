@@ -1,0 +1,8 @@
+---
+devops_host_allowed_network: "192.168.56.0/24"
+devops_host_allowed_tcp_ports:
+  - 22
+  - 3000
+  - 8080
+  - 9090
+  - 9093
