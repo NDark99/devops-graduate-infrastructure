@@ -1,12 +1,5 @@
 locals {
   monitoring_dir = abspath("${path.module}/monitoring")
-  alertmanager_config = templatefile(
-    "${path.module}/monitoring/alertmanager/alertmanager.yml.tftpl",
-    {
-      discord_webhook_url = var.discord_webhook_url
-      receiver_name       = var.discord_webhook_url == "" ? "local" : "discord"
-    }
-  )
 }
 
 resource "docker_network" "monitoring" {
@@ -162,7 +155,7 @@ resource "docker_container" "alertmanager" {
 
   upload {
     file        = "/etc/alertmanager/alertmanager.yml"
-    content     = local.alertmanager_config
+    content     = file("${local.monitoring_dir}/alertmanager/alertmanager.local.yml")
     permissions = "0644"
   }
 

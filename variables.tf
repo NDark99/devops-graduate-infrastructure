@@ -36,21 +36,6 @@ variable "grafana_admin_password" {
   }
 }
 
-variable "discord_webhook_url" {
-  description = "Optional Discord webhook used by Alertmanager."
-  type        = string
-  sensitive   = true
-  default     = ""
-
-  validation {
-    condition = (
-      var.discord_webhook_url == "" ||
-      can(regex("^https://(discord.com|discordapp.com)/api/webhooks/", var.discord_webhook_url))
-    )
-    error_message = "Use an empty value or a valid Discord webhook URL."
-  }
-}
-
 variable "vm_ip" {
   description = "Static private IP configured in the Vagrantfile."
   type        = string
