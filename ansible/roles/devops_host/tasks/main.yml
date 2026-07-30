@@ -67,6 +67,13 @@
     direction: outgoing
     policy: allow
 
+- name: Allow Vagrant SSH through the NAT gateway
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    src: "{{ devops_host_vagrant_gateway }}"
+    port: "22"
+
 - name: Allow project services from the host-only network
   community.general.ufw:
     rule: allow

@@ -1,5 +1,6 @@
 ---
 devops_host_allowed_network: "192.168.56.0/24"
+devops_host_vagrant_gateway: "10.0.2.2"
 devops_host_allowed_tcp_ports:
   - 22
   - 3000

@@ -1,7 +1,7 @@
 # DevOps Graduate Project — Local Infrastructure
 
 This repository contains the complete infrastructure as code without AWS.
-Vagrant creates an Ubuntu 24.04 virtual machine in VirtualBox, Ansible prepares
+Vagrant creates an Ubuntu 22.04 LTS virtual machine in VirtualBox, Ansible prepares
 the operating system, and Terraform manages all Docker containers.
 
 ## Architecture
@@ -9,7 +9,7 @@ the operating system, and Terraform manages all Docker containers.
 ```mermaid
 flowchart TB
     Host["Windows host"] --> VB["VirtualBox"]
-    VB --> VM["Ubuntu 24.04 — 192.168.56.10"]
+    VB --> VM["Ubuntu 22.04 LTS — 192.168.56.10"]
     VM --> Ansible["Ansible Local"]
     Ansible --> OS["Docker + Terraform + UFW"]
     VM --> Runner["GitHub Actions Runner"]
@@ -25,7 +25,7 @@ flowchart TB
 
 ## Managed resources
 
-- Ubuntu 24.04 VM with 2 CPUs and 4 GB RAM,
+- Ubuntu 22.04 LTS VM with 2 CPUs and 4 GB RAM,
 - private host-only network `192.168.56.0/24`,
 - Ansible role configuring Docker, Terraform, and UFW,
 - Docker and Docker Compose,
@@ -67,6 +67,11 @@ terraform version
 ansible --version
 sudo ufw status
 ```
+
+UFW denies incoming traffic by default. Project ports are allowed only from the
+host-only network (`192.168.56.0/24`), while SSH is additionally allowed from
+the Vagrant NAT gateway (`10.0.2.2`) so that `vagrant ssh` and provisioning keep
+working after the firewall is enabled.
 
 ## Register the GitHub Actions Runner
 
