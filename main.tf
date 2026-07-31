@@ -208,7 +208,11 @@ resource "docker_container" "grafana" {
   env = [
     "GF_SECURITY_ADMIN_USER=admin",
     "GF_SECURITY_ADMIN_PASSWORD=${var.grafana_admin_password}",
-    "GF_USERS_ALLOW_SIGN_UP=false"
+    "GF_USERS_ALLOW_SIGN_UP=false",
+    "GF_AUTH_ANONYMOUS_ENABLED=true",
+    "GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer",
+    "GF_AUTH_ANONYMOUS_HIDE_VERSION=true",
+    "GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/devops-overview.json"
   ]
 
   ports {

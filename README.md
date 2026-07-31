@@ -121,10 +121,11 @@ reaches the same desired state instead of creating duplicate resources.
 | Prometheus | `http://192.168.56.10:9090` |
 | Alertmanager | `http://192.168.56.10:9093` |
 
-The default Grafana user is `admin`; its password comes from the
-`grafana_admin_password` variable. The `DevOps Project Overview` dashboard is
-provisioned automatically. Alertmanager provides its own interface on port
-`9093`, while Grafana visualizes the Prometheus metrics used by alert rules.
+Grafana opens the automatically provisioned `DevOps Project Overview` dashboard
+without a login using an anonymous read-only `Viewer` role. Administrative
+changes still require the `admin` user; its password comes from the
+`grafana_admin_password` variable. Alertmanager provides its own interface on
+port `9093`, while Grafana visualizes the Prometheus metrics used by alert rules.
 
 ## Ansible provisioning
 
